@@ -1,44 +1,28 @@
-use std::{io, process::exit, sync::{Arc, Mutex}, thread};
-
+use std::{io, thread};
 use crate::udp::UdpListener;
+use crate::utils::{usage_err, invalid_cmd_err};
 
 mod udp;
 mod tcp;
-
-fn usage_err() {
-    eprintln!("Usage: netbeam send <file_name> | netbeam receive");
-    exit(1);
-}
-fn invalid_cmd_err(cmd: &String) {
-    eprintln!("Invalid command: {}", cmd);
-    exit(1);
-}
+mod utils;
 
 fn send(file_path: &String) {}
 
 fn receive() -> io::Result<()>{
-    let mut listener = UdpListener::new()?;
-    let hostname = get_hostname()?;
+    let listener = UdpListener::new()?; 
+    let mut buf = [0u8;1024];
     println!("Listening to connections...");
     let udp_handle = thread::spawn(move || {
         loop {
-            match listener.socket.recv_from(&mut listener.recv_buf) {
-                Ok(_) => {},
-                Err(_) => {
-                    break;
-                },
-            }
+            let (size, src_addr) = listener.socket.recv_from(&mut buf).unwrap();
+            let scan_message = String::from_utf8_lossy(&buf[..size]);
+            println!("{}", scan_message);
+            println!("{}", src_addr);
         }
     });
-    let tcp_handle = thread::spawn(|| {});
-    udp_handle.join();
-    tcp_handle.join();
-    Ok(())
-}
 
-fn get_hostname() -> io::Result<String> {
-    let hostname = hostname::get()?.to_string_lossy().to_string();
-    Ok(hostname)
+    _ = udp_handle.join();
+    Ok(())
 }
 
 fn main() -> io::Result<()> {
