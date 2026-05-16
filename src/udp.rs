@@ -1,15 +1,18 @@
-use std::net::UdpSocket;
-use std::io;
+use std::net::{Ipv4Addr, UdpSocket};
+
+use local_ip_address::local_ip;
+
+use crate::error::NetbeamResult;
 
 pub const DEFAULT_SOCKET: u16 = 20069;
-pub const BROADCAST_ADDR: &str = "255.255.255.255:20069";
 
 pub struct UdpNode {
     pub socket: UdpSocket,
+    pub broadcast_addr: String,
 }
 
 impl UdpNode {
-    pub fn new(port: Option<u16>) -> io::Result<UdpNode> {
+    pub fn new(port: Option<u16>) -> NetbeamResult<UdpNode> {
         let mut address = String::from("0.0.0.0:");
         if let Some(port) = port {
             address.push_str(&port.to_string());
@@ -17,6 +20,13 @@ impl UdpNode {
             address.push_str(&DEFAULT_SOCKET.to_string());
         }
         let socket = UdpSocket::bind(address)?;
-        Ok(UdpNode { socket })
+        let local_ip_str: String = local_ip()?.to_string();
+        let local_ip: Ipv4Addr = local_ip_str.parse()?;
+        let [a, b, c, _] = local_ip.octets();
+        let mut broadcast_addr = Ipv4Addr::new(a, b, c, 255).to_string();
+        broadcast_addr.push(':');
+        broadcast_addr.push_str(&DEFAULT_SOCKET.to_string());
+        println!("{}", broadcast_addr);
+        Ok(UdpNode { socket, broadcast_addr })
     }
 }
