@@ -1,7 +1,5 @@
 use std::net::{Ipv4Addr, UdpSocket};
-
 use local_ip_address::local_ip;
-
 use crate::{error::{NetbeamResult}, packet::Packet};
 
 pub const DEFAULT_UDP_SOCKET: u16 = 20069;

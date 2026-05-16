@@ -17,7 +17,10 @@ fn send(file_path: &String) -> NetbeamResult<()> {
     listener.set_broadcast()?;
     println!("Sending discovery packet");
     // we will send the discovery packet
-    listener.send_packet(packet::Packet::Discovery, &listener.broadcast_addr)?;
+    listener.send_packet(Packet::Discovery, &listener.broadcast_addr)?;
+    let mut buf = [0u8; 1024];
+    let (size, _) = listener.socket.recv_from(&mut buf)?;
+    println!("{}", size);
     Ok(())
 }
 
@@ -27,22 +30,21 @@ fn receive() -> NetbeamResult<()>{
     let hostname = Arc::new(get_hostname()?);
     println!("Listening to connections...");
     let udp_handle = thread::spawn(move || {
-        loop {
-            let hostname = Arc::clone(&hostname);
-            let (size, src_addr) = listener.socket.recv_from(&mut buf).unwrap();
-            let scan_message = String::from_utf8_lossy(&buf[..size]);
-            println!("{}", scan_message);
-            println!("{}", src_addr);
-            let result = listener.send_packet(Packet::DiscoveryAck(DiscoveryAckPacket{
-                hostname: (*hostname).clone(),
-                ip: listener.ip,
-            }), &src_addr.to_string());
-            match result {
-                Ok(()) => {},
-                Err(err) => {
-                    println!("{:?}", err);
-                },
-            }
+        let hostname = Arc::clone(&hostname);
+        let (size, src_addr) = listener.socket.recv_from(&mut buf).unwrap();
+        let scan_message = String::from_utf8_lossy(&buf[..size]);
+        println!("{}", scan_message);
+        println!("{}", src_addr);
+        println!("Sending the acknowledgement");
+        let result = listener.send_packet(Packet::DiscoveryAck(DiscoveryAckPacket{
+            hostname: (*hostname).clone(),
+            ip: listener.ip,
+        }), &src_addr.to_string());
+        match result {
+            Ok(()) => {},
+            Err(err) => {
+                println!("{:?}", err);
+            },
         }
     });
     _ = udp_handle.join();
