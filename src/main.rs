@@ -7,14 +7,15 @@ mod udp;
 mod tcp;
 mod utils;
 mod error;
+mod packet;
 
 fn send(file_path: &String) -> NetbeamResult<()> {
     _ = file_path;
-    let listener = UdpNode::new(Some(0))?;
-    listener.socket.set_broadcast(true)?;
+    let mut listener = UdpNode::new(Some(0))?;
+    listener.set_broadcast()?;
     println!("Sending discovery packet");
     // we will send the discovery packet
-    listener.socket.send_to(b"DISCOVERY", listener.broadcast_addr.clone())?;
+    listener.send_packet(packet::Packet::Discovery, &listener.broadcast_addr)?;
     Ok(())
 }
 

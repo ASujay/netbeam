@@ -2,13 +2,14 @@ use std::net::{Ipv4Addr, UdpSocket};
 
 use local_ip_address::local_ip;
 
-use crate::error::NetbeamResult;
+use crate::{error::{NetbeamResult}, packet::Packet};
 
 pub const DEFAULT_SOCKET: u16 = 20069;
 
 pub struct UdpNode {
     pub socket: UdpSocket,
     pub broadcast_addr: String,
+    pub ip: String,
 }
 
 impl UdpNode {
@@ -26,7 +27,17 @@ impl UdpNode {
         let mut broadcast_addr = Ipv4Addr::new(a, b, c, 255).to_string();
         broadcast_addr.push(':');
         broadcast_addr.push_str(&DEFAULT_SOCKET.to_string());
-        println!("{}", broadcast_addr);
-        Ok(UdpNode { socket, broadcast_addr })
+        Ok(UdpNode { socket, broadcast_addr, ip: local_ip_str })
+    }
+
+    pub fn set_broadcast(&mut self) -> NetbeamResult<()> {
+        self.socket.set_broadcast(true)?;
+        Ok(())
+    }
+
+    pub fn send_packet(&self, packet: Packet, addr: &String) -> NetbeamResult<()> {
+        let data = packet.serialize();
+        self.socket.send_to(&data, addr)?;
+        Ok(())
     }
 }
