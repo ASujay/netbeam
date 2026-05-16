@@ -4,13 +4,13 @@ const DISCOVERY: &'static str = "DISCOVERY";
 const COMPLETE: &'static str = "COMPLETE";
 
 pub struct DiscoveryAckPacket {
-    hostname: String,
-    ip: Ipv4Addr,
+    pub hostname: String,
+    pub ip: Ipv4Addr,
 }
 
 pub struct DataPacket<'a> {
-    size: usize,
-    bytes: &'a [u8],
+    pub size: usize,
+    pub bytes: &'a [u8],
 }
 
 /*
@@ -43,7 +43,7 @@ impl<'a> Packet<'a> {
             Packet::DiscoveryAck(data) => {
                 let mut serialized_bytes = Vec::<u8>::new();
                 let hostname_bytes_len = data.hostname.len();
-                let total_size = size_of::<usize>() * 2 + hostname_bytes_len + size_of::<u8>() * 4; 
+                let total_size = size_of::<usize>() * 2 + hostname_bytes_len + size_of::<u8>() * 4;
                 serialized_bytes.extend_from_slice(&total_size.to_le_bytes());
                 serialized_bytes.extend_from_slice(&hostname_bytes_len.to_le_bytes());
                 serialized_bytes.extend_from_slice(&data.hostname.as_bytes());

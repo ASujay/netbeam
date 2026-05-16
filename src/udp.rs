@@ -4,12 +4,12 @@ use local_ip_address::local_ip;
 
 use crate::{error::{NetbeamResult}, packet::Packet};
 
-pub const DEFAULT_SOCKET: u16 = 20069;
+pub const DEFAULT_UDP_SOCKET: u16 = 20069;
 
 pub struct UdpNode {
     pub socket: UdpSocket,
     pub broadcast_addr: String,
-    pub ip: String,
+    pub ip: Ipv4Addr,
 }
 
 impl UdpNode {
@@ -18,7 +18,7 @@ impl UdpNode {
         if let Some(port) = port {
             address.push_str(&port.to_string());
         } else {
-            address.push_str(&DEFAULT_SOCKET.to_string());
+            address.push_str(&DEFAULT_UDP_SOCKET.to_string());
         }
         let socket = UdpSocket::bind(address)?;
         let local_ip_str: String = local_ip()?.to_string();
@@ -26,8 +26,8 @@ impl UdpNode {
         let [a, b, c, _] = local_ip.octets();
         let mut broadcast_addr = Ipv4Addr::new(a, b, c, 255).to_string();
         broadcast_addr.push(':');
-        broadcast_addr.push_str(&DEFAULT_SOCKET.to_string());
-        Ok(UdpNode { socket, broadcast_addr, ip: local_ip_str })
+        broadcast_addr.push_str(&DEFAULT_UDP_SOCKET.to_string());
+        Ok(UdpNode { socket, broadcast_addr, ip: local_ip})
     }
 
     pub fn set_broadcast(&mut self) -> NetbeamResult<()> {
