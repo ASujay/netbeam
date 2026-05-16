@@ -1,26 +1,34 @@
+use std::net::{TcpListener, UdpSocket};
 use std::{io, thread};
-use crate::udp::UdpListener;
+use crate::udp::{BROADCAST_ADDR, UdpNode};
 use crate::utils::{usage_err, invalid_cmd_err};
 
 mod udp;
 mod tcp;
 mod utils;
 
-fn send(file_path: &String) {}
+fn send(file_path: &String) -> io::Result<()> {
+    let listener = UdpNode::new(Some(0))?;
+    listener.socket.set_broadcast(true)?;
+    println!("Sending discovery packet");
+    // we will send the discovery packet
+    listener.socket.send_to(b"DISCOVERY", BROADCAST_ADDR)?;
+    Ok(())
+}
 
 fn receive() -> io::Result<()>{
-    let listener = UdpListener::new()?; 
+    let listener = UdpNode::new(None)?; 
     let mut buf = [0u8;1024];
     println!("Listening to connections...");
     let udp_handle = thread::spawn(move || {
         loop {
+            println!("Yosh");
             let (size, src_addr) = listener.socket.recv_from(&mut buf).unwrap();
             let scan_message = String::from_utf8_lossy(&buf[..size]);
             println!("{}", scan_message);
             println!("{}", src_addr);
         }
     });
-
     _ = udp_handle.join();
     Ok(())
 }
