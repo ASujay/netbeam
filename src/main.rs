@@ -18,9 +18,23 @@ fn send(file_path: &String) -> NetbeamResult<()> {
     println!("Sending discovery packet");
     // we will send the discovery packet
     listener.send_packet(Packet::Discovery, &listener.broadcast_addr)?;
-    let mut buf = [0u8; 1024];
-    let (size, _) = listener.socket.recv_from(&mut buf)?;
-    println!("{}", size);
+
+    let udp_handle = thread::spawn(move ||{
+        loop {
+            let mut buf = [0u8; 1024];
+            match listener.socket.recv_from(&mut buf) {
+                Ok((size, _)) => {
+                    // here we deserialize the data
+                    if buf[0] == 0 && let Packet::DiscoveryAck(packet) = Packet::deserialize_discovery_ack_packet(&buf[1..], size){
+                        println!("{:?}", size);
+                        println!("{:?}", packet);
+                    }
+                },
+                Err(err) => {},
+            }
+        }
+    });
+    _ = udp_handle.join();    
     Ok(())
 }
 
@@ -47,7 +61,12 @@ fn receive() -> NetbeamResult<()>{
             },
         }
     });
+
+    let tcp_handle = thread::spawn(move ||{
+        loop {}
+    });
     _ = udp_handle.join();
+    _ = tcp_handle.join();
     Ok(())
 }
 
