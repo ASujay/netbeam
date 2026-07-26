@@ -1,4 +1,4 @@
-use std::{env, io, mem, net::{IpAddr::{self, V4, V6}, SocketAddr, UdpSocket}, process::exit, thread, time::{self, Duration}};
+use std::{env, io, net::{IpAddr::{self}, SocketAddr, UdpSocket}, process::exit, thread, time::{Duration}};
 use network_interface::{NetworkInterface, NetworkInterfaceConfig};
 use rand::{RngExt, rng};
 
@@ -36,11 +36,17 @@ enum UdpProtocolPacket {
 }
 
 impl UdpProtocolPacket {
-    fn create_packet(&self) -> String {
+    fn create_packet(&self) -> Vec<u8> {
         match self {
-            UdpProtocolPacket::Conn => String::from("CONN"),
-            UdpProtocolPacket::Info(port, request_id) => String::from("INFO"),
-            UdpProtocolPacket::Ack => String::from("ACK"),
+            UdpProtocolPacket::Conn => b"CONN".to_vec(),
+            UdpProtocolPacket::Info(port, request_id) => {
+                let mut info_packet = Vec::<u8>::with_capacity(6);
+                info_packet.extend_from_slice(b"INFO");
+                // IMPORTANT(Aniket): Sender side should also use be scheme
+                info_packet.extend_from_slice(&port.to_le_bytes());
+                info_packet
+            },
+            UdpProtocolPacket::Ack => b"ACK".to_vec(),
         }
     }
 }
@@ -85,7 +91,7 @@ impl UdpComm {
                 for ip in &broadcast_addrs {
                     // send a CONN broadcast to the subnet
                     // TODO(Aniket): Fix this later, we should check what error we are getting
-                    _ = socket.send_to(UdpProtocolPacket::Conn.create_packet().as_bytes(), SocketAddr::new(*ip, DEFAULT_UDP_PORT));
+                    _ = socket.send_to(UdpProtocolPacket::Conn.create_packet().as_slice(), SocketAddr::new(*ip, DEFAULT_UDP_PORT));
                     
                 }
                 // wait for 5 secs to resend
@@ -93,7 +99,17 @@ impl UdpComm {
             }
         });
 
-        let info_receiver_handle = thread::spawn(|| {
+        let socket = self.socket.try_clone()?;
+        let info_receiver_handle = thread::spawn(move || {
+            loop {
+                let mut buf = [0u8; 1024];
+                if let Ok((bytes_read, socket_addr)) = socket.recv_from(&mut buf) {
+                    if &buf[0..(bytes_read - 2)] == b"INFO" {
+                        let port: u16 = (buf[bytes_read - 1] as u16) | ((buf[bytes_read - 2] as u16) << 8);
+                        println!("{}:{}", socket_addr.ip().to_string(), port); 
+                    }
+                }
+            }
         });
 
         _ = boardcast_handle.join();
@@ -103,24 +119,15 @@ impl UdpComm {
 
     fn receive(&self) -> NBResult<()>{
         let socket = self.socket.try_clone()?;
-        let conn_handler_handle = thread::spawn(move || {
-            loop {
-                let mut buf = [0u8; 1024];
-                if let Ok((bytes_read, socket_addr)) = socket.recv_from(&mut buf) {
-                    if &buf[0..bytes_read] == b"CONN" {
-                        println!("CONNECTION REQUEST: {}", socket_addr.ip());
-                    }
-                }
+        let mut buf = [0u8; 1024];
+        if let Ok((bytes_read, socket_addr)) = socket.recv_from(&mut buf) {
+            if &buf[0..bytes_read] == b"CONN" {
+                println!("CONNECTION REQUEST: {}", socket_addr.ip());
+                println!("SENDING RECEIVER INFO...");
+                socket.send_to(UdpProtocolPacket::Info(DEFAULT_TCP_PORT, 0).create_packet().as_slice(), socket_addr.to_string())?;
             }
-        });
+        }
 
-        let ack_sender_handle = thread::spawn(|| {
-
-        });
-
-
-        _ = conn_handler_handle.join();
-        _ = ack_sender_handle.join();
         Ok(())
     }
 
