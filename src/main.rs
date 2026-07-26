@@ -127,6 +127,15 @@ impl UdpComm {
                 println!("CONNECTION REQUEST: {}", socket_addr.ip());
                 println!("SENDING RECEIVER INFO...");
                 socket.send_to(UdpProtocolPacket::Info(DEFAULT_TCP_PORT, 0).create_packet().as_slice(), socket_addr)?;
+                loop {
+                    // we we will wait acknowledgement
+                    buf.fill(0);
+                    if let Ok((bytes_read, socket_addr)) = socket.recv_from(&mut buf) {
+                        if &buf[0..bytes_read] == b"ACK" {
+                            println!("ACKNOWLEDGEMENT RECEIVED.");
+                        }
+                    }
+                }
             }
         }
 
