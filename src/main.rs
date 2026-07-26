@@ -105,8 +105,10 @@ impl UdpComm {
                 let mut buf = [0u8; 1024];
                 if let Ok((bytes_read, socket_addr)) = socket.recv_from(&mut buf) {
                     if &buf[0..(bytes_read - 2)] == b"INFO" {
-                        let port: u16 = (buf[bytes_read - 1] as u16) | ((buf[bytes_read - 2] as u16) << 8);
-                        println!("{}:{}", socket_addr.ip().to_string(), port); 
+                        let port: u16 = (buf[bytes_read - 2] as u16) | ((buf[bytes_read - 1] as u16) << 8);
+                        println!("{}:{}", socket_addr.ip().to_string(), port);
+                        // sending back the acknowledgement
+                        _ = socket.send_to(UdpProtocolPacket::Conn.create_packet().as_slice(), socket_addr); 
                     }
                 }
             }
@@ -124,7 +126,7 @@ impl UdpComm {
             if &buf[0..bytes_read] == b"CONN" {
                 println!("CONNECTION REQUEST: {}", socket_addr.ip());
                 println!("SENDING RECEIVER INFO...");
-                socket.send_to(UdpProtocolPacket::Info(DEFAULT_TCP_PORT, 0).create_packet().as_slice(), socket_addr.to_string())?;
+                socket.send_to(UdpProtocolPacket::Info(DEFAULT_TCP_PORT, 0).create_packet().as_slice(), socket_addr)?;
             }
         }
 
