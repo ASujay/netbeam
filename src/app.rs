@@ -131,7 +131,7 @@ impl FileReceiver {
                 let mut buf = [0u8; 1024];
                 let (bytes_read, socket_address) = socket.recv_from(&mut buf)?;
                 let packet = DiscoveryPacket::decode(&buf[0..bytes_read]);
-                println!("Yoush");
+                println!("{:?}", packet);
                 if let Some(packet) = packet {
                     match packet {
                         DiscoveryPacket::Conn => {
