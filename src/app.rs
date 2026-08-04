@@ -87,6 +87,7 @@ impl FileSender {
                 }
             }
             while !broadcast_thread_context.is_shutdown() {
+                println!("Sending boardcast");
                 for ip in &broadcast_addrs {
                     socket.send_to(DiscoveryPacket::Conn.encode().as_slice(), SocketAddr::new(*ip, DEFAULT_UDP_PORT))?;
                 }
@@ -130,6 +131,7 @@ impl FileReceiver {
                 let mut buf = [0u8; 1024];
                 let (bytes_read, socket_address) = socket.recv_from(&mut buf)?;
                 let packet = DiscoveryPacket::decode(&buf[0..bytes_read]);
+                println!("Yoush");
                 if let Some(packet) = packet {
                     match packet {
                         DiscoveryPacket::Conn => {
