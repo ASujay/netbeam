@@ -7,6 +7,7 @@ mod device;
 mod errors;
 mod event;
 mod thread;
+mod request;
 
 fn main() -> NBResult<()>{
     let mut app = App::new()?;

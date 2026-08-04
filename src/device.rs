@@ -1,5 +1,4 @@
-use std::collections::HashMap;
-
+use std::{collections::HashMap, net::IpAddr};
 use crate::common::TransferReqId;
 
 pub struct DeviceRegistry(HashMap<TransferReqId, Device>);
@@ -10,6 +9,7 @@ impl DeviceRegistry {
     }
 
     pub fn add_device(&mut self, request_id: TransferReqId, device: Device) {
+        println!("Device added: {:?}", device);
         self.0.insert(request_id, device);
     }
 
@@ -18,10 +18,15 @@ impl DeviceRegistry {
     }
 }
 
+#[derive(Debug)]
 pub struct Device {
     pub name: String,
-    pub ip_address: String,
+    pub ip_address: IpAddr,
     pub port: u16,
 }
 
-impl Device {}
+impl Device {
+    pub fn new(name: String, ip_address: IpAddr, port: u16) -> Device {
+        Device { name, ip_address, port }
+    }
+}

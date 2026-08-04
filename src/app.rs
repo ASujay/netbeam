@@ -1,10 +1,11 @@
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use std::{env, thread};
 use std::net::{IpAddr, SocketAddr, UdpSocket};
 use std::sync::mpsc::{self};
 use network_interface::{NetworkInterface, NetworkInterfaceConfig};
-use crate::common::{DEFAULT_UDP_PORT, UDP_SOCKET_ADDRESS};
-use crate::device::DeviceRegistry;
+use crate::common::{DEFAULT_TCP_PORT, DEFAULT_UDP_PORT, UDP_SOCKET_ADDRESS};
+use crate::device::{Device, DeviceRegistry};
 use crate::errors::{NBError, NBResult};
 use crate::event::{EventManager, Events};
 use crate::packet::DiscoveryPacket;
@@ -16,6 +17,7 @@ pub struct App {
     event_manager: EventManager,
     state: AppState,
     thread_context: ThreadContext,
+    socket: UdpSocket,
 }
 
 impl App {
@@ -23,12 +25,15 @@ impl App {
         let (event_sender, event_sreceiver) = mpsc::channel::<Events>();
         let shutdown = ShutdownSignal::new();
         let thread_context = ThreadContext::new(shutdown, event_sender);
+        let sender_socket_address = format!("{}:{}", UDP_SOCKET_ADDRESS, DEFAULT_UDP_PORT);
+        let socket = UdpSocket::bind(sender_socket_address)?;
         Ok(App { 
-            sender: FileSender::new(thread_context.clone())?, 
-            receiver: FileReceiver::new(thread_context.clone()),
+            sender: FileSender::new(thread_context.clone(), &socket)?, 
+            receiver: FileReceiver::new(thread_context.clone())?,
             event_manager: EventManager::new(event_sreceiver),
             state: AppState::new(),
             thread_context,
+            socket,
         })
     }
 
@@ -38,8 +43,8 @@ impl App {
         let args: Vec<String> = env::args().collect();
         if args.len() != 2 { return Err(NBError::InvalidCommandLineArgs); }
         let app_thread_group = match args[1].as_str() {
-            "send" => self.sender.run()?,
-            "receive" => self.receiver.run()?,
+            "send" => self.sender.run(&self.socket)?,
+            "receive" => self.receiver.run(&self.socket)?,
             _ => return Err(NBError::InvalidCommandLineArgs),
         };
         while self.state.is_running {
@@ -56,23 +61,20 @@ impl App {
 }
 
 struct FileSender {
-    socket: UdpSocket,
     context: ThreadContext,
 
 }
 
 impl FileSender {
-    pub fn new(context: ThreadContext) -> NBResult<Self> {
-        let sender_socket_address = format!("{}:{}", UDP_SOCKET_ADDRESS, DEFAULT_UDP_PORT);
-        let socket = UdpSocket::bind(sender_socket_address)?;
+    pub fn new(context: ThreadContext, socket: &UdpSocket) -> NBResult<Self> {
         socket.set_broadcast(true)?;
-        Ok(FileSender { socket, context })
+        Ok(FileSender { context })
     }
 
-    pub fn run(&self) -> NBResult<ThreadGroup> {
+    pub fn run(&self, udp_socket: &UdpSocket) -> NBResult<ThreadGroup> {
         let mut thread_group = ThreadGroup::new();
         let broadcast_thread_context = self.context.clone();
-        let socket = self.socket.try_clone()?;
+        let socket = udp_socket.try_clone()?;
         thread_group.spawn_thread(move || {
             let interfaces = NetworkInterface::show()?;
             let mut broadcast_addrs: Vec<IpAddr> = Vec::new();
@@ -93,10 +95,11 @@ impl FileSender {
             Ok(())
         });
 
-        let reply_listener_context = self.context.clone();
+        let mut reply_listener_context = self.context.clone();
+        let socket = udp_socket.try_clone()?;
+        let mut buf = [0u8; 1024];
         thread_group.spawn_thread(move || {
             while !reply_listener_context.is_shutdown() {
-
             }
             Ok(())
         });
@@ -114,16 +117,30 @@ struct FileReceiver {
 }
 
 impl FileReceiver {
-    pub fn new(context: ThreadContext) -> Self {
-        FileReceiver { context }
+    pub fn new(context: ThreadContext) -> NBResult<Self> {
+        Ok(FileReceiver { context })
     }
 
-    pub fn run(&self) -> NBResult<ThreadGroup> {
+    pub fn run(&self, udp_socket: &UdpSocket) -> NBResult<ThreadGroup> {
         let mut thread_group = ThreadGroup::new();
         let broadcast_listener_thread_context = self.context.clone();
+        let socket = udp_socket.try_clone()?;
         thread_group.spawn_thread(move || {
-            while broadcast_listener_thread_context.is_shutdown() {
-
+            while !broadcast_listener_thread_context.is_shutdown() {
+                let mut buf = [0u8; 1024];
+                let (bytes_read, socket_address) = socket.recv_from(&mut buf)?;
+                let packet = DiscoveryPacket::decode(&buf[0..bytes_read]);
+                if let Some(packet) = packet {
+                    match packet {
+                        DiscoveryPacket::Conn => {
+                            // we need to send the reply to the sender
+                            let packet = DiscoveryPacket::Info { port: DEFAULT_TCP_PORT, request_id: 0xFF }.encode();
+                            socket.send_to(packet.as_slice(), socket_address)?;
+                        },
+                        DiscoveryPacket::Ackn{request_id} => {},
+                        _ => {},
+                    }
+                } 
             }
             Ok(())
         });
@@ -133,14 +150,14 @@ impl FileReceiver {
 
 pub struct AppState {
     pub is_running: bool,
-    pub registry: DeviceRegistry,
+    pub registry: Arc<Mutex<DeviceRegistry>>,
 }
 
 impl AppState {
     fn new() -> Self {
         AppState { 
             is_running: true,
-            registry: DeviceRegistry::new(),
+            registry: Arc::new(Mutex::new(DeviceRegistry::new())),
         }
     }
 }

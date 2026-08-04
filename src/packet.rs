@@ -1,3 +1,7 @@
+use std::ptr::read;
+
+use crate::request;
+
 const CONN_PACKET_IDENTIFIER: &[u8] = b"CONN";
 const ACKN_PACKET_IDENTIFIER: &[u8] = b"ACKN";
 const INFO_PACKET_IDENTIFIER: &[u8] = b"INFO";
@@ -9,14 +13,19 @@ pub enum DiscoveryPacket {
         port: u16,
         request_id: u64,
     },
-    Ackn,
+    Ackn{request_id: u64},
 }
 
 impl DiscoveryPacket {
     pub fn encode(&self) -> Vec<u8> {
         match self {
             DiscoveryPacket::Conn => CONN_PACKET_IDENTIFIER.to_vec(),
-            DiscoveryPacket::Ackn => ACKN_PACKET_IDENTIFIER.to_vec(),
+            DiscoveryPacket::Ackn{request_id} => {
+                let mut ackn_packet = Vec::<u8>::with_capacity(12);
+                ackn_packet.extend_from_slice(ACKN_PACKET_IDENTIFIER);
+                ackn_packet.extend_from_slice(&request_id.to_le_bytes());
+                ackn_packet
+            },
             DiscoveryPacket::Info { port, request_id } => {
                 let mut info_packet = Vec::<u8>::with_capacity(15);
                 info_packet.extend_from_slice(INFO_PACKET_IDENTIFIER);
@@ -31,7 +40,10 @@ impl DiscoveryPacket {
         let magic = buf.get(..4)?;
         match magic {
             CONN_PACKET_IDENTIFIER => Some(DiscoveryPacket::Conn),
-            ACKN_PACKET_IDENTIFIER => Some(DiscoveryPacket::Ackn),
+            ACKN_PACKET_IDENTIFIER => {
+                let request_id = u64::from_le_bytes(buf.get(4..12)?.try_into().ok()?);
+                Some(DiscoveryPacket::Ackn { request_id })
+            },
             INFO_PACKET_IDENTIFIER => {
                 let port = u16::from_le_bytes(buf.get(4..6)?.try_into().ok()?);
                 let request_id = u64::from_le_bytes(buf.get(6..14)?.try_into().ok()?);
@@ -54,6 +66,13 @@ mod test {
         buf
     }
 
+    fn create_ackn_packet_buffer(request_id: u64) -> Vec<u8> {
+        let mut buf = Vec::<u8>::new();
+        buf.extend_from_slice(b"ACKN");
+        buf.extend_from_slice(&request_id.to_le_bytes());
+        buf
+    }
+
     #[test]
     fn decode_conn() {
         let buf = b"CONN";
@@ -62,8 +81,11 @@ mod test {
 
     #[test]
     fn decode_ackn() {
-        let buf = b"ACKN";
-        assert_eq!(DiscoveryPacket::decode(buf), Some(DiscoveryPacket::Ackn));
+        let request_id: u64 = 0xFF;
+        let mut buf = Vec::<u8>::new();
+        buf.extend_from_slice(b"ACKN");
+        buf.extend_from_slice(&request_id.to_le_bytes());
+        assert_eq!(DiscoveryPacket::decode(buf.as_slice()), Some(DiscoveryPacket::Ackn{request_id: request_id}));
     }
 
     #[test]
@@ -79,7 +101,8 @@ mod test {
 
     #[test]
     fn encode_ackn() {
-        assert_eq!(DiscoveryPacket::Ackn.encode(), b"ACKN");
+        let buf = create_ackn_packet_buffer(0xFF);
+        assert_eq!(DiscoveryPacket::Ackn{request_id: 0xFF}.encode(), buf);
     }
 
     #[test]
@@ -97,9 +120,10 @@ mod test {
 
     #[test]
     fn round_trip_ackn() {
-        let packet = DiscoveryPacket::Ackn.encode();
+        let request_id: u64 = 0xFF;
+        let packet = DiscoveryPacket::Ackn{request_id}.encode();
         let decoded_packet = DiscoveryPacket::decode(&packet);
-        assert_eq!(decoded_packet, Some(DiscoveryPacket::Ackn));
+        assert_eq!(decoded_packet, Some(DiscoveryPacket::Ackn{request_id}));
     }
 
     #[test]

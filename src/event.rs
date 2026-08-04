@@ -29,10 +29,12 @@ impl EventManager {
             match event {
                 Events::Key(key_event) => {},
                 Events::DeviceFound{ transfer_req_id, device } => {
-                    state.registry.add_device(transfer_req_id, device);
+                    let mut reg = state.registry.lock().unwrap();
+                    reg.add_device(transfer_req_id, device);
                 },
-                Events::DeviceLost(transfer_req_i) => {
-                    state.registry.remove_device(transfer_req_i);
+                Events::DeviceLost(transfer_req_id) => {
+                    let mut reg = state.registry.lock().unwrap();
+                    reg.remove_device(transfer_req_id);
                 },
                 Events::Quit => {
                     state.is_running = false;

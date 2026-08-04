@@ -1,4 +1,6 @@
-use std::io;
+use std::{io, sync::mpsc::SendError};
+
+use crate::event::Events;
 
 pub type NBResult<T> = Result<T, NBError>;
 
@@ -7,6 +9,7 @@ pub enum NBError {
     InvalidCommandLineArgs,
     Io(std::io::Error),
     NetworkInterface(network_interface::Error),
+    EventRegister(SendError<Events>),
 }
 
 impl NBError {
@@ -20,7 +23,10 @@ impl NBError {
             },
             NBError::NetworkInterface(err) => {
                 eprintln!("Network interface error: {}", err);
-            }
+            },
+            NBError::EventRegister(err) => {
+                eprintln!("Unable to register event: {}", err);
+            },
         }
     }
 }
@@ -34,6 +40,12 @@ impl From<io::Error> for NBError {
 impl From<network_interface::Error> for NBError {
     fn from(err: network_interface::Error) -> Self {
         NBError::NetworkInterface(err)
+    }
+}
+
+impl From<SendError<Events>> for NBError {
+    fn from(err: SendError<Events>) -> Self {
+        NBError::EventRegister(err)
     }
 }
 
