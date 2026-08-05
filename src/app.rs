@@ -1,15 +1,14 @@
-use crate::common::{DEFAULT_TCP_PORT, DEFAULT_UDP_PORT, UDP_SOCKET_ADDRESS};
+use crate::common::{DEFAULT_UDP_IP, DEFAULT_UDP_PORT, TransferReqId};
 use crate::device::{Device, DeviceRegistry};
 use crate::errors::{NBError, NBResult};
 use crate::event::{EventManager, Events};
-use crate::packet::DiscoveryPacket;
+use crate::receiver::FileReceiver;
+use crate::sender::FileSender;
 use crate::thread::{ShutdownSignal, ThreadContext, ThreadGroup};
-use network_interface::{NetworkInterface, NetworkInterfaceConfig};
-use std::net::{IpAddr, SocketAddr, UdpSocket};
+use std::net::{UdpSocket};
 use std::sync::mpsc::{self};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
-use std::{env, thread};
+use std::{env};
 
 pub struct App {
     sender: FileSender,
@@ -25,7 +24,7 @@ impl App {
         let (event_sender, event_sreceiver) = mpsc::channel::<Events>();
         let shutdown = ShutdownSignal::new();
         let thread_context = ThreadContext::new(shutdown, event_sender);
-        let sender_socket_address = format!("{}:{}", UDP_SOCKET_ADDRESS, DEFAULT_UDP_PORT);
+        let sender_socket_address = format!("{}:{}", DEFAULT_UDP_IP, DEFAULT_UDP_PORT);
         let socket = UdpSocket::bind(sender_socket_address)?;
         Ok(App {
             sender: FileSender::new(thread_context.clone(), &socket)?,
@@ -37,18 +36,28 @@ impl App {
         })
     }
 
-    pub fn run(&mut self) -> NBResult<()> {
-        // validate the command line argument
-        // usage should be netbeam <send|receive>
+    fn start_module(&mut self, mode: &str) -> NBResult<ThreadGroup> {
+        let thread_group = match mode {
+            "send" => Ok(self.sender.run(&self.socket)?),
+            "receive" => Ok(self.receiver.run(&self.socket)?),
+            _ => return Err(NBError::InvalidCommandLineArgs),
+        };
+        thread_group
+    }
+
+    fn parse_cmdline_arg() -> NBResult<String> {
         let args: Vec<String> = env::args().collect();
         if args.len() != 2 {
             return Err(NBError::InvalidCommandLineArgs);
         }
-        let app_thread_group = match args[1].as_str() {
-            "send" => self.sender.run(&self.socket)?,
-            "receive" => self.receiver.run(&self.socket)?,
-            _ => return Err(NBError::InvalidCommandLineArgs),
-        };
+        Ok(args[1].clone())
+    }
+ 
+    pub fn run(&mut self) -> NBResult<()> {
+        // validate the command line argument
+        // usage should be netbeam <send|receive>
+        let mode = Self::parse_cmdline_arg()?;
+        let app_thread_group = self.start_module(mode.as_str())?;
         while self.state.is_running {
             self.process_events();
         }
@@ -62,116 +71,30 @@ impl App {
     }
 }
 
-struct FileSender {
-    context: ThreadContext,
-}
-
-impl FileSender {
-    pub fn new(context: ThreadContext, socket: &UdpSocket) -> NBResult<Self> {
-        socket.set_broadcast(true)?;
-        Ok(FileSender { context })
-    }
-
-    pub fn run(&self, udp_socket: &UdpSocket) -> NBResult<ThreadGroup> {
-        let mut thread_group = ThreadGroup::new();
-        let broadcast_thread_context = self.context.clone();
-        let socket = udp_socket.try_clone()?;
-        thread_group.spawn_thread(move || {
-            let interfaces = NetworkInterface::show()?;
-            let mut broadcast_addrs: Vec<IpAddr> = Vec::new();
-            for interface in interfaces {
-                // collect all the address that we can send a broadcast to
-                for addr in interface.addr {
-                    if let Some(addr) = addr.broadcast()
-                        && !addr.is_loopback()
-                    {
-                        broadcast_addrs.push(addr);
-                    }
-                }
-            }
-            while !broadcast_thread_context.is_shutdown() {
-                println!("Sending boardcast");
-                for ip in &broadcast_addrs {
-                    socket.send_to(
-                        DiscoveryPacket::Conn.encode().as_slice(),
-                        SocketAddr::new(*ip, DEFAULT_UDP_PORT),
-                    )?;
-                }
-                thread::sleep(Duration::from_secs(5));
-            }
-            Ok(())
-        });
-
-        let mut reply_listener_context = self.context.clone();
-        let socket = udp_socket.try_clone()?;
-        let mut buf = [0u8; 1024];
-        thread_group.spawn_thread(move || {
-            while !reply_listener_context.is_shutdown() {
-            }
-            Ok(())
-        });
-
-        // let ui_thread_context = self.context.clone();
-        // thread_group.spawn_thread(move || {
-        //     Ok(())
-        // });
-        Ok(thread_group)
-    }
-}
-
-struct FileReceiver {
-    context: ThreadContext,
-}
-
-impl FileReceiver {
-    pub fn new(context: ThreadContext) -> NBResult<Self> {
-        Ok(FileReceiver { context })
-    }
-
-    pub fn run(&self, udp_socket: &UdpSocket) -> NBResult<ThreadGroup> {
-        let mut thread_group = ThreadGroup::new();
-        let broadcast_listener_thread_context = self.context.clone();
-        let socket = udp_socket.try_clone()?;
-        thread_group.spawn_thread(move || {
-            while !broadcast_listener_thread_context.is_shutdown() {
-                let mut buf = [0u8; 1024];
-                let (bytes_read, socket_address) = socket.recv_from(&mut buf)?;
-                let packet = DiscoveryPacket::decode(&buf[0..bytes_read]);
-                if let Some(packet) = packet {
-                    match packet {
-                        DiscoveryPacket::Conn => {
-                            // we need to send the reply to the sender
-                            let packet = DiscoveryPacket::Info {
-                                port: DEFAULT_TCP_PORT,
-                                request_id: 0xFF,
-                            }
-                            .encode();
-                            println!("{:?}", packet);
-                            if let Err(e) = socket.send_to(packet.as_slice(), socket_address) {
-                                eprint!("Error replying to broadcaster");
-                            }
-                        }
-                        DiscoveryPacket::Ackn { request_id } => {}
-                        _ => {}
-                    }
-                }
-            }
-            Ok(())
-        });
-        Ok(thread_group)
-    }
-}
-
 pub struct AppState {
     pub is_running: bool,
     pub registry: Arc<Mutex<DeviceRegistry>>,
 }
 
 impl AppState {
-    fn new() -> Self {
+    pub fn new() -> Self {
         AppState {
             is_running: true,
             registry: Arc::new(Mutex::new(DeviceRegistry::new())),
         }
+    }
+
+    pub fn add_device(&mut self, request_id: TransferReqId, device: Device) {
+        let mut reg = self.registry.lock().unwrap();
+        reg.add_device(request_id, device);
+    }
+
+    pub fn remove_device(&mut self, request_id: TransferReqId) {
+        let mut reg = self.registry.lock().unwrap();
+        reg.remove_device(request_id);
+    }
+
+    pub fn shutdown_app(&mut self) {
+        self.is_running = false;
     }
 }

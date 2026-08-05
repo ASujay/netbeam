@@ -58,7 +58,7 @@ impl ThreadContext {
         self.shutdown.shutdown();
     }
 
-    pub fn register_event(&mut self, event: Events) -> NBResult<()> {
+    pub fn register_event(&self, event: Events) -> NBResult<()> {
         self.event_sender.send(event)?;
         Ok(())
     }

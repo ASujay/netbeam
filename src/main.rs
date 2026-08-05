@@ -8,6 +8,9 @@ mod errors;
 mod event;
 mod thread;
 mod request;
+mod sender;
+mod receiver;
+mod protocol;
 
 fn main() -> NBResult<()>{
     let mut app = App::new()?;

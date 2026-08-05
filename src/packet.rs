@@ -1,7 +1,3 @@
-use std::ptr::read;
-
-use crate::request;
-
 const CONN_PACKET_IDENTIFIER: &[u8] = b"CONN";
 const ACKN_PACKET_IDENTIFIER: &[u8] = b"ACKN";
 const INFO_PACKET_IDENTIFIER: &[u8] = b"INFO";

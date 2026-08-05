@@ -346,6 +346,7 @@ dependencies = [
  "local-ip-address",
  "network-interface",
  "rand",
+ "thiserror",
 ]
 
 [[package]]

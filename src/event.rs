@@ -8,7 +8,7 @@ pub enum Events {
 
     // Discovery Event
     DeviceFound{
-        transfer_req_id: TransferReqId,
+        request_id: TransferReqId,
         device: Device,
     },
     DeviceLost(TransferReqId),
@@ -24,21 +24,18 @@ impl EventManager {
         EventManager { receiver: event_receiver }
     }
 
+    pub fn process_key_events(&self, state: &mut AppState, key_event: Event) {
+        _ = state;
+        _ = key_event;
+    }
+
     pub fn process_events(&self, state: &mut AppState) {
         while let Ok(event) = self.receiver.recv() {
             match event {
-                Events::Key(key_event) => {},
-                Events::DeviceFound{ transfer_req_id, device } => {
-                    let mut reg = state.registry.lock().unwrap();
-                    reg.add_device(transfer_req_id, device);
-                },
-                Events::DeviceLost(transfer_req_id) => {
-                    let mut reg = state.registry.lock().unwrap();
-                    reg.remove_device(transfer_req_id);
-                },
-                Events::Quit => {
-                    state.is_running = false;
-                },
+                Events::Key(key_event) => self.process_key_events(state, key_event),
+                Events::DeviceFound{ request_id, device } => state.add_device(request_id, device),
+                Events::DeviceLost(request_id) => state.remove_device(request_id),
+                Events::Quit => state.shutdown_app(),
             }
         }
     }

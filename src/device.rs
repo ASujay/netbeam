@@ -9,7 +9,6 @@ impl DeviceRegistry {
     }
 
     pub fn add_device(&mut self, request_id: TransferReqId, device: Device) {
-        println!("Device added: {:?}", device);
         self.0.insert(request_id, device);
     }
 
