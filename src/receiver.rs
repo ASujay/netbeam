@@ -1,5 +1,5 @@
 use std::net::UdpSocket;
-use crate::{errors::NBResult, protocol::Protocol, thread::{ThreadContext, ThreadGroup}};
+use crate::{errors::NBResult, protocol, thread::{ThreadContext, ThreadGroup}};
 
 pub struct FileReceiver {
     context: ThreadContext,
@@ -14,9 +14,7 @@ impl FileReceiver {
         let mut thread_group = ThreadGroup::new();
         let context = self.context.clone();
         let socket = udp_socket.try_clone()?;
-        thread_group.spawn_thread(move || Protocol::reply_to_conn(context, socket));
-
-
+        thread_group.spawn_thread(move || protocol::reply_to_sender(context, socket));
         Ok(thread_group)
     }
 }

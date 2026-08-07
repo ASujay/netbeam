@@ -12,7 +12,6 @@ pub enum Events {
         device: Device,
     },
     DeviceLost(TransferReqId),
-    Quit,
 }
 
 pub struct EventManager {
@@ -35,7 +34,6 @@ impl EventManager {
                 Events::Key(key_event) => self.process_key_events(state, key_event),
                 Events::DeviceFound{ request_id, device } => state.add_device(request_id, device),
                 Events::DeviceLost(request_id) => state.remove_device(request_id),
-                Events::Quit => state.shutdown_app(),
             }
         }
     }

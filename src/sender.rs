@@ -1,6 +1,6 @@
 use std::net::UdpSocket;
 use crate::{
-    errors::NBResult, packet::DiscoveryPacket::{self}, protocol::Protocol, thread::{ThreadContext, ThreadGroup}
+    errors::NBResult, packet::DiscoveryPacket::{self}, protocol, thread::{ThreadContext, ThreadGroup}
 };
 
 pub struct FileSender {
@@ -19,11 +19,11 @@ impl FileSender {
         let broadcast_thread_context = self.context.clone();
         let socket = udp_socket.try_clone()?;
         let conn_packet = DiscoveryPacket::Conn.encode();
-        thread_group.spawn_thread(move || Protocol::broadcast(conn_packet, broadcast_thread_context, socket));
+        thread_group.spawn_thread(move || protocol::broadcast(conn_packet, broadcast_thread_context, socket));
 
         let reply_listener_context = self.context.clone();
         let socket = udp_socket.try_clone()?;
-        thread_group.spawn_thread(move || Protocol::reply_to_info(reply_listener_context, socket));
+        thread_group.spawn_thread(move || protocol::reply_to_info(reply_listener_context, socket));
 
         // let ui_thread_context = self.context.clone();
         // thread_group.spawn_thread(move || {
