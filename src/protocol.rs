@@ -1,6 +1,6 @@
 use std::{net::{IpAddr, SocketAddr, UdpSocket}, thread::{self}, time::Duration};
 use network_interface::{NetworkInterface, NetworkInterfaceConfig};
-use crate::{common::{DEFAULT_TCP_PORT, DEFAULT_UDP_PORT}, device::Device, errors::NBResult, event::Events, packet::DiscoveryPacket, thread::ThreadContext};
+use crate::{common::{DEFAULT_RETRANSMIT_PERIOD, DEFAULT_TCP_PORT, DEFAULT_UDP_PORT, Request}, device::Device, errors::NBResult, event::Events, packet::DiscoveryPacket, thread::ThreadContext};
 
 fn get_broadcast_addrs() -> NBResult<Vec<IpAddr>> {
     let mut broadcast_addrs = Vec::<IpAddr>::new();
@@ -54,18 +54,25 @@ pub fn reply_to_sender(context: ThreadContext, socket: UdpSocket) -> NBResult<()
         if let Some(packet) = packet {
             match packet {
                 DiscoveryPacket::Conn => {
+                    let request_id: u64 = rand::random();
+                    let port = DEFAULT_TCP_PORT;
                     // we need to send the reply to the sender
                     let packet = DiscoveryPacket::Info {
-                        port: DEFAULT_TCP_PORT,
-                        request_id: 0xFF,
+                        port,
+                        request_id,
                     }
                     .encode();
+                    let request = Request::new(request_id, port, socket_address);
                     if let Err(e) = socket.send_to(packet.as_slice(), socket_address) {
-                        eprint!("Error replying to broadcaster' {}", e);
+                        eprintln!("Error replying to broadcaster' {}", e);
+                    } else {
+                        // save the request to the registry
+                        context.register_event(Events::AddRequest { request_id, request})?;
                     }
                 }
                 DiscoveryPacket::Ackn { request_id } => {
-                    _ = request_id;
+                    // remove the request to the registry
+                    context.register_event(Events::RemoveRequest(request_id))?;
                 }
                 _ => {}
             }
@@ -74,26 +81,33 @@ pub fn reply_to_sender(context: ThreadContext, socket: UdpSocket) -> NBResult<()
     Ok(())
 }
 pub fn retransmit_to_sender(context: ThreadContext, socket: UdpSocket) -> NBResult<()> {
+    // we need to continue sending the request packets for all pending requests
+    while !context.is_shutdown() {
+        // send the retransmit event
+        _ = context.register_event(Events::RetransmitPendingPackets(socket.try_clone()?));
+        // sleep for a fixed amount of time
+        thread::sleep(Duration::from_secs(DEFAULT_RETRANSMIT_PERIOD));
+    }
     Ok(())
 }
 
-#[cfg(test)]
-mod test {
-    use std::sync::mpsc::{self, Receiver, Sender};
-    use crate::thread::ShutdownSignal;
-    use super::*;
+// #[cfg(test)]
+// mod test {
+//     use std::sync::mpsc::{self, Receiver, Sender};
+//     use crate::thread::ShutdownSignal;
+//     use super::*;
 
-    // #[test]
-    // fn protocol_packet_exchange() {
-    //     let sender_socket = UdpSocket::bind("127.0.0.1:0").unwrap();
-    //     let receiver_socket = UdpSocket::bind("127.0.0.1:0").unwrap();
+//     #[test]
+//     fn protocol_packet_exchange() {
+//         let sender_socket = UdpSocket::bind("127.0.0.1:0").unwrap();
+//         let receiver_socket = UdpSocket::bind("127.0.0.1:0").unwrap();
 
-    //     // set timeout so that test does not get stuck
-    //     receiver_socket.set_read_timeout(Some(Duration::from_millis(500))).unwrap();
-    //     let receiver_addr = receiver_socket.local_addr().unwrap();
-    //     let (event_tx, event_rx): (Sender<Events>, Receiver<Events>) = mpsc::channel();
-    //     let shutdown = ShutdownSignal::new();
-    //     let context = ThreadContext::new()
-    //     let receiver_addr
-    // }
-}
+//         // set timeout so that test does not get stuck
+//         receiver_socket.set_read_timeout(Some(Duration::from_millis(500))).unwrap();
+//         let receiver_addr = receiver_socket.local_addr().unwrap();
+//         let (event_tx, event_rx): (Sender<Events>, Receiver<Events>) = mpsc::channel();
+//         let shutdown = ShutdownSignal::new();
+//         let context = ThreadContext::new()
+//         let receiver_addr
+//     }
+// }

@@ -1,6 +1,6 @@
-use std::sync::mpsc::Receiver;
+use std::{net::{UdpSocket}, sync::mpsc::Receiver};
 use crossterm::event::Event;
-use crate::{app::AppState, common::TransferReqId, device::Device};
+use crate::{app::AppState, common::{RegistryId, Request}, device::Device, packet::DiscoveryPacket};
 
 pub enum Events {
     // keyboard event
@@ -8,10 +8,16 @@ pub enum Events {
 
     // Discovery Event
     DeviceFound{
-        request_id: TransferReqId,
+        request_id: RegistryId,
         device: Device,
     },
-    DeviceLost(TransferReqId),
+    DeviceLost(RegistryId),
+    AddRequest {
+        request_id: RegistryId,
+        request: Request,
+    },
+    RemoveRequest(RegistryId),
+    RetransmitPendingPackets(UdpSocket),
 }
 
 pub struct EventManager {
@@ -34,6 +40,18 @@ impl EventManager {
                 Events::Key(key_event) => self.process_key_events(state, key_event),
                 Events::DeviceFound{ request_id, device } => state.add_device(request_id, device),
                 Events::DeviceLost(request_id) => state.remove_device(request_id),
+                Events::AddRequest { request_id, request} => state.add_request(request_id, request),
+                Events::RemoveRequest(request_id) => state.remove_request(request_id),
+                Events::RetransmitPendingPackets(socket) =>  {
+                    let reg = state.request_registry.lock().unwrap();
+                    for (_, value) in reg.0.iter() {
+                        let packet = DiscoveryPacket::Info { port: value.port, request_id: value.request_id }.encode();
+                        if let Err(e) = socket.send_to(packet.as_slice(), value.socket_address) {
+
+                        }
+                    }
+
+                },
             }
         }
     }

@@ -7,7 +7,7 @@ mod device;
 mod errors;
 mod event;
 mod thread;
-mod request;
+mod registry;
 mod sender;
 mod receiver;
 mod protocol;

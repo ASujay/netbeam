@@ -15,6 +15,10 @@ impl FileReceiver {
         let context = self.context.clone();
         let socket = udp_socket.try_clone()?;
         thread_group.spawn_thread(move || protocol::reply_to_sender(context, socket));
+        
+        let context = self.context.clone();
+        let socket = udp_socket.try_clone()?;
+        thread_group.spawn_thread(move || protocol::retransmit_to_sender(context, socket));
         Ok(thread_group)
     }
 }

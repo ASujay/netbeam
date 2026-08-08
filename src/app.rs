@@ -1,11 +1,12 @@
-use crate::common::{DEFAULT_UDP_IP, DEFAULT_UDP_PORT, TransferReqId};
-use crate::device::{Device, DeviceRegistry};
+use crate::common::{DEFAULT_UDP_IP, DEFAULT_UDP_PORT, RegistryId, Request};
+use crate::device::{Device};
 use crate::errors::{NBError, NBResult};
 use crate::event::{EventManager, Events};
 use crate::receiver::FileReceiver;
+use crate::registry::Registry;
 use crate::sender::FileSender;
 use crate::thread::{ShutdownSignal, ThreadContext, ThreadGroup};
-use std::net::{UdpSocket};
+use std::net::{SocketAddr, UdpSocket};
 use std::sync::mpsc::{self};
 use std::sync::{Arc, Mutex};
 use std::{env};
@@ -73,25 +74,38 @@ impl App {
 
 pub struct AppState {
     pub is_running: bool,
-    pub registry: Arc<Mutex<DeviceRegistry>>,
+    pub device_registry: Arc<Mutex<Registry<Device>>>,
+    pub request_registry: Arc<Mutex<Registry<Request>>>,
 }
 
 impl AppState {
     pub fn new() -> Self {
         AppState {
             is_running: true,
-            registry: Arc::new(Mutex::new(DeviceRegistry::new())),
+            device_registry: Arc::new(Mutex::new(Registry::new())),
+            request_registry: Arc::new(Mutex::new(Registry::new())),
         }
     }
 
-    pub fn add_device(&mut self, request_id: TransferReqId, device: Device) {
-        let mut reg = self.registry.lock().unwrap();
-        reg.add_device(request_id, device);
+    pub fn add_device(&mut self, request_id: RegistryId, device: Device) {
+        let mut reg = self.device_registry.lock().unwrap();
+        reg.add_entity(request_id, device);
     }
 
-    pub fn remove_device(&mut self, request_id: TransferReqId) {
-        let mut reg = self.registry.lock().unwrap();
-        reg.remove_device(request_id);
+    pub fn remove_device(&mut self, request_id: RegistryId) {
+        let mut reg = self.device_registry.lock().unwrap();
+        reg.remove_entity(request_id);
+    }
+
+    pub fn add_request(&mut self, request_id: RegistryId, request: Request) {
+        let mut reg = self.request_registry.lock().unwrap();
+        reg.add_entity(request_id, request);
+        
+    }
+
+    pub fn remove_request(&mut self, request_id: RegistryId) {
+        let mut reg = self.request_registry.lock().unwrap();
+        reg.remove_entity(request_id);
     }
 
     pub fn shutdown_app(&mut self) {
