@@ -6,7 +6,7 @@ use crate::receiver::FileReceiver;
 use crate::registry::Registry;
 use crate::sender::FileSender;
 use crate::thread::{ShutdownSignal, ThreadContext, ThreadGroup};
-use std::net::{SocketAddr, UdpSocket};
+use std::net::{UdpSocket};
 use std::sync::mpsc::{self};
 use std::sync::{Arc, Mutex};
 use std::{env};
