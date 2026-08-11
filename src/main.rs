@@ -1,22 +1,25 @@
-use crate::{app::App, errors::NBResult};
+use std::process::ExitCode;
 
-mod common;
-mod packet;
+use crate::app::try_main;
+
 mod app;
+mod common;
 mod device;
 mod errors;
 mod event;
-mod thread;
+mod packet;
+mod protocol;
+mod receiver;
 mod registry;
 mod sender;
-mod receiver;
-mod protocol;
+mod thread;
 
-fn main() -> NBResult<()>{
-    let mut app = App::new()?;
-    if let Err(err) = app.run() {
-        err.handle_error();
-        std::process::exit(1);
+fn main() -> ExitCode {
+    match try_main() {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(e) => {
+            e.handle_error();
+            ExitCode::FAILURE
+        }
     }
-    Ok(())
 }

@@ -1,17 +1,47 @@
-use crate::common::{DEFAULT_UDP_IP, DEFAULT_UDP_PORT, RegistryId, Request};
-use crate::device::{Device};
+use crate::common::{
+    DEFAULT_UDP_IP, DEFAULT_UDP_PORT, RECEIVE_MODE_IDENTIFIER, RegistryId, Request,
+    SEND_MODE_IDENTIFIER,
+};
+use crate::device::Device;
 use crate::errors::{NBError, NBResult};
 use crate::event::{EventManager, Events};
 use crate::receiver::FileReceiver;
 use crate::registry::Registry;
 use crate::sender::FileSender;
 use crate::thread::{ShutdownSignal, ThreadContext, ThreadGroup};
-use std::net::{UdpSocket};
+use std::env;
+use std::net::UdpSocket;
 use std::sync::mpsc::{self};
 use std::sync::{Arc, Mutex};
-use std::{env};
+
+enum Mode {
+    Send,
+    Receive,
+}
+
+impl Mode {
+    fn from_cmd_args() -> NBResult<Self> {
+        let args: Vec<String> = env::args().collect();
+        if args.len() != 2 {
+            return Err(NBError::InvalidCommandLineArgs);
+        }
+        match args[1].as_str() {
+            SEND_MODE_IDENTIFIER => return Ok(Self::Send),
+            RECEIVE_MODE_IDENTIFIER => return Ok(Self::Receive),
+            _ => return Err(NBError::InvalidCommandLineArgs),
+        }
+    }
+}
+
+pub fn try_main() -> NBResult<()> {
+    let mode = Mode::from_cmd_args()?;
+    let mut app = App::new(mode)?;
+    app.run()?;
+    Ok(())
+}
 
 pub struct App {
+    mode: Mode,
     sender: FileSender,
     receiver: FileReceiver,
     event_manager: EventManager,
@@ -21,7 +51,7 @@ pub struct App {
 }
 
 impl App {
-    pub fn new() -> NBResult<Self> {
+    pub fn new(mode: Mode) -> NBResult<Self> {
         let (event_sender, event_sreceiver) = mpsc::channel::<Events>();
         let shutdown = ShutdownSignal::new();
         let thread_context = ThreadContext::new(shutdown, event_sender);
@@ -34,31 +64,20 @@ impl App {
             state: AppState::new(),
             thread_context,
             socket,
+            mode,
         })
     }
 
-    fn start_module(&mut self, mode: &str) -> NBResult<ThreadGroup> {
-        let thread_group = match mode {
-            "send" => Ok(self.sender.run(&self.socket)?),
-            "receive" => Ok(self.receiver.run(&self.socket)?),
-            _ => return Err(NBError::InvalidCommandLineArgs),
+    fn start_module(&mut self) -> NBResult<ThreadGroup> {
+        let thread_group = match self.mode {
+            Mode::Send => Ok(self.sender.run(&self.socket)?),
+            Mode::Receive => Ok(self.receiver.run(&self.socket)?),
         };
         thread_group
     }
 
-    fn parse_cmdline_arg() -> NBResult<String> {
-        let args: Vec<String> = env::args().collect();
-        if args.len() != 2 {
-            return Err(NBError::InvalidCommandLineArgs);
-        }
-        Ok(args[1].clone())
-    }
- 
     pub fn run(&mut self) -> NBResult<()> {
-        // validate the command line argument
-        // usage should be netbeam <send|receive>
-        let mode = Self::parse_cmdline_arg()?;
-        let app_thread_group = self.start_module(mode.as_str())?;
+        let app_thread_group = self.start_module()?;
         while self.state.is_running {
             self.process_events();
         }
@@ -100,7 +119,6 @@ impl AppState {
     pub fn add_request(&mut self, request_id: RegistryId, request: Request) {
         let mut reg = self.request_registry.lock().unwrap();
         reg.add_entity(request_id, request);
-        
     }
 
     pub fn remove_request(&mut self, request_id: RegistryId) {

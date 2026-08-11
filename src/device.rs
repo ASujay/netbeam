@@ -1,6 +1,6 @@
-use std::{net::IpAddr};
+use core::fmt;
+use std::{net::IpAddr, write};
 
-#[derive(Debug)]
 pub struct Device {
     pub name: String,
     pub ip_address: IpAddr,
@@ -9,6 +9,22 @@ pub struct Device {
 
 impl Device {
     pub fn new(name: String, ip_address: IpAddr, port: u16) -> Device {
-        Device { name, ip_address, port }
+        Device {
+            name,
+            ip_address,
+            port,
+        }
+    }
+}
+
+impl fmt::Display for Device {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{} {}:{}",
+            self.name,
+            self.ip_address.to_string(),
+            self.port
+        )
     }
 }

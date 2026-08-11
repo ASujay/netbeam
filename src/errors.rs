@@ -1,6 +1,5 @@
-use std::{io, sync::mpsc::SendError};
-
 use crate::event::Events;
+use std::{io, sync::mpsc::SendError};
 
 pub type NBResult<T> = Result<T, NBError>;
 
@@ -17,16 +16,16 @@ impl NBError {
         match self {
             NBError::InvalidCommandLineArgs => {
                 eprintln!("Invalid command line arguments. Usage: netbeam <send|receive>");
-            },
+            }
             NBError::Io(err) => {
                 eprintln!("IO error: {}", err);
-            },
+            }
             NBError::NetworkInterface(err) => {
                 eprintln!("Network interface error: {}", err);
-            },
+            }
             NBError::EventRegister(err) => {
                 eprintln!("Unable to register event: {}", err);
-            },
+            }
         }
     }
 }
@@ -48,6 +47,3 @@ impl From<SendError<Events>> for NBError {
         NBError::EventRegister(err)
     }
 }
-
-
-
