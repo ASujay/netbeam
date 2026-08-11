@@ -1,5 +1,5 @@
-use std::collections::{HashMap};
 use crate::common::RegistryId;
+use std::collections::HashMap;
 
 pub struct Registry<T>(pub HashMap<RegistryId, T>);
 

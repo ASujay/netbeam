@@ -1,5 +1,12 @@
-use std::{sync::{Arc, atomic::{AtomicBool, Ordering}, mpsc::Sender}, thread::{self, JoinHandle}};
 use crate::{errors::NBResult, event::Events};
+use std::{
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+        mpsc::Sender,
+    },
+    thread::{self, JoinHandle},
+};
 
 #[derive(Clone)]
 pub struct ShutdownSignal {
@@ -8,12 +15,14 @@ pub struct ShutdownSignal {
 
 impl ShutdownSignal {
     pub fn new() -> ShutdownSignal {
-        ShutdownSignal { flag: Arc::new(AtomicBool::new(false)) }
+        ShutdownSignal {
+            flag: Arc::new(AtomicBool::new(false)),
+        }
     }
     pub fn shutdown(&self) {
         self.flag.store(true, Ordering::Release);
     }
-    pub fn is_shutdown(&self)-> bool {
+    pub fn is_shutdown(&self) -> bool {
         self.flag.load(Ordering::Acquire)
     }
 }
@@ -24,9 +33,14 @@ pub struct ThreadGroup {
 
 impl ThreadGroup {
     pub fn new() -> Self {
-        ThreadGroup { thread_handles: Vec::new() }
+        ThreadGroup {
+            thread_handles: Vec::new(),
+        }
     }
-    pub fn spawn_thread<F>(&mut self, f: F) where F: FnOnce() -> NBResult<()> + Send + 'static {
+    pub fn spawn_thread<F>(&mut self, f: F)
+    where
+        F: FnOnce() -> NBResult<()> + Send + 'static,
+    {
         self.thread_handles.push(thread::spawn(f));
     }
     pub fn join_all(self) -> NBResult<()> {
@@ -47,7 +61,10 @@ pub struct ThreadContext {
 
 impl ThreadContext {
     pub fn new(shutdown: ShutdownSignal, event_sender: Sender<Events>) -> ThreadContext {
-        ThreadContext { shutdown, event_sender }
+        ThreadContext {
+            shutdown,
+            event_sender,
+        }
     }
 
     pub fn is_shutdown(&self) -> bool {

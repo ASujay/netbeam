@@ -27,8 +27,9 @@ fn get_broadcast_addrs() -> NBResult<Vec<IpAddr>> {
     }
     Ok(broadcast_addrs)
 }
-pub fn broadcast(packet: Vec<u8>, context: ThreadContext, socket: UdpSocket) -> NBResult<()> {
+pub fn broadcast(context: ThreadContext, socket: UdpSocket) -> NBResult<()> {
     // we can let the thread crash here since if we cannot get the network interfaces we cannot continue
+    let packet = DiscoveryPacket::Conn.encode();
     let broadcast_addrs: Vec<IpAddr> = get_broadcast_addrs()?;
     while !context.is_shutdown() {
         println!("Broadcasting on {} interfaces", broadcast_addrs.len());

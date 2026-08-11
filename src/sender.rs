@@ -1,7 +1,6 @@
 use crate::common::{DEFAULT_UDP_IP, DEFAULT_UDP_PORT};
 use crate::{
     errors::NBResult,
-    packet::DiscoveryPacket::{self},
     protocol,
     thread::{ThreadContext, ThreadGroup},
 };
@@ -24,16 +23,16 @@ impl FileSender {
         let mut thread_group = ThreadGroup::new();
 
         let broadcast_thread_context = self.context.clone();
-        let socket = self.socket.try_clone()?;
-        let conn_packet = DiscoveryPacket::Conn.encode();
-        thread_group.spawn_thread(move || {
-            protocol::broadcast(conn_packet, broadcast_thread_context, socket)
-        });
+        let broadcast_socket = self.socket.try_clone()?;
 
         let reply_listener_context = self.context.clone();
-        let socket = self.socket.try_clone()?;
-        thread_group.spawn_thread(move || protocol::reply_to_info(reply_listener_context, socket));
+        let reply_listener_socket = self.socket.try_clone()?;
 
+        thread_group
+            .spawn_thread(move || protocol::broadcast(broadcast_thread_context, broadcast_socket));
+        thread_group.spawn_thread(move || {
+            protocol::reply_to_info(reply_listener_context, reply_listener_socket)
+        });
         // let ui_thread_context = self.context.clone();
         // thread_group.spawn_thread(move || {
         //     Ok(())

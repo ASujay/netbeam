@@ -52,6 +52,8 @@ impl App {
         let (event_sender, event_sreceiver) = mpsc::channel::<Events>();
         let shutdown = ShutdownSignal::new();
         let thread_context = ThreadContext::new(shutdown, event_sender);
+
+        // we propogate the error because if we cannot initalize this struct the app wont runt, so this is an irrecoverable failure
         let module = match mode {
             Mode::Send => AppModule::Sender(FileSender::new(thread_context.clone())?),
             Mode::Receive => AppModule::Receiver(FileReceiver::new(thread_context.clone())?),

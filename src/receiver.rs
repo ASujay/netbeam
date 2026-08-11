@@ -20,13 +20,20 @@ impl FileReceiver {
 
     pub fn run(&self) -> NBResult<ThreadGroup> {
         let mut thread_group = ThreadGroup::new();
-        let context = self.context.clone();
-        let socket = self.socket.try_clone()?;
-        thread_group.spawn_thread(move || protocol::reply_to_sender(context, socket));
 
-        let context = self.context.clone();
-        let socket = self.socket.try_clone()?;
-        thread_group.spawn_thread(move || protocol::retransmit_to_sender(context, socket));
+        let reply_thread_context = self.context.clone();
+        let reply_thread_socket = self.socket.try_clone()?;
+
+        let retransmit_thread_context = self.context.clone();
+        let retransmit_thread_socket = self.socket.try_clone()?;
+
+        thread_group.spawn_thread(move || {
+            protocol::reply_to_sender(reply_thread_context, reply_thread_socket)
+        });
+        thread_group.spawn_thread(move || {
+            protocol::retransmit_to_sender(retransmit_thread_context, retransmit_thread_socket)
+        });
+
         Ok(thread_group)
     }
 }
