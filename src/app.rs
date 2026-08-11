@@ -1,7 +1,4 @@
-use crate::common::{
-    DEFAULT_UDP_IP, DEFAULT_UDP_PORT, RECEIVE_MODE_IDENTIFIER, RegistryId, Request,
-    SEND_MODE_IDENTIFIER,
-};
+use crate::common::{RECEIVE_MODE_IDENTIFIER, RegistryId, Request, SEND_MODE_IDENTIFIER};
 use crate::device::Device;
 use crate::errors::{NBError, NBResult};
 use crate::event::{EventManager, Events};
@@ -10,13 +7,17 @@ use crate::registry::Registry;
 use crate::sender::FileSender;
 use crate::thread::{ShutdownSignal, ThreadContext, ThreadGroup};
 use std::env;
-use std::net::UdpSocket;
 use std::sync::mpsc::{self};
 use std::sync::{Arc, Mutex};
 
 enum Mode {
     Send,
     Receive,
+}
+
+enum AppModule {
+    Sender(FileSender),
+    Receiver(FileReceiver),
 }
 
 impl Mode {
@@ -26,57 +27,53 @@ impl Mode {
             return Err(NBError::InvalidCommandLineArgs);
         }
         match args[1].as_str() {
-            SEND_MODE_IDENTIFIER => return Ok(Self::Send),
-            RECEIVE_MODE_IDENTIFIER => return Ok(Self::Receive),
-            _ => return Err(NBError::InvalidCommandLineArgs),
+            SEND_MODE_IDENTIFIER => Ok(Self::Send),
+            RECEIVE_MODE_IDENTIFIER => Ok(Self::Receive),
+            _ => Err(NBError::InvalidCommandLineArgs),
         }
     }
 }
 
-pub fn try_main() -> NBResult<()> {
+pub(super) fn try_main() -> NBResult<()> {
     let mode = Mode::from_cmd_args()?;
     let mut app = App::new(mode)?;
-    app.run()?;
-    Ok(())
+    app.run()
 }
 
-pub struct App {
-    mode: Mode,
-    sender: FileSender,
-    receiver: FileReceiver,
+struct App {
     event_manager: EventManager,
     state: AppState,
     thread_context: ThreadContext,
-    socket: UdpSocket,
+    module: AppModule,
 }
 
 impl App {
-    pub fn new(mode: Mode) -> NBResult<Self> {
+    fn new(mode: Mode) -> NBResult<Self> {
         let (event_sender, event_sreceiver) = mpsc::channel::<Events>();
         let shutdown = ShutdownSignal::new();
         let thread_context = ThreadContext::new(shutdown, event_sender);
-        let sender_socket_address = format!("{}:{}", DEFAULT_UDP_IP, DEFAULT_UDP_PORT);
-        let socket = UdpSocket::bind(sender_socket_address)?;
+        let module = match mode {
+            Mode::Send => AppModule::Sender(FileSender::new(thread_context.clone())?),
+            Mode::Receive => AppModule::Receiver(FileReceiver::new(thread_context.clone())?),
+        };
+        let event_manager = EventManager::new(event_sreceiver);
+        let state = AppState::new();
         Ok(App {
-            sender: FileSender::new(thread_context.clone(), &socket)?,
-            receiver: FileReceiver::new(thread_context.clone())?,
-            event_manager: EventManager::new(event_sreceiver),
-            state: AppState::new(),
+            event_manager,
+            state,
             thread_context,
-            socket,
-            mode,
+            module,
         })
     }
 
-    fn start_module(&mut self) -> NBResult<ThreadGroup> {
-        let thread_group = match self.mode {
-            Mode::Send => Ok(self.sender.run(&self.socket)?),
-            Mode::Receive => Ok(self.receiver.run(&self.socket)?),
-        };
-        thread_group
+    fn start_module(&self) -> NBResult<ThreadGroup> {
+        match &self.module {
+            AppModule::Sender(sender) => sender.run(),
+            AppModule::Receiver(receiver) => receiver.run(),
+        }
     }
 
-    pub fn run(&mut self) -> NBResult<()> {
+    fn run(&mut self) -> NBResult<()> {
         let app_thread_group = self.start_module()?;
         while self.state.is_running {
             self.process_events();
@@ -86,7 +83,7 @@ impl App {
         Ok(())
     }
 
-    pub fn process_events(&mut self) {
+    fn process_events(&mut self) {
         self.event_manager.process_events(&mut self.state);
     }
 }
