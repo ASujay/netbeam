@@ -65,9 +65,16 @@ impl EventManager {
                         let packet = DiscoveryPacket::Info {
                             port: value.port,
                             request_id: value.request_id,
+                            hostname: state.hostname.clone(),
                         }
                         .encode();
-                        if let Err(e) = socket.send_to(packet.as_slice(), value.socket_address) {}
+                        if let Err(e) = socket.send_to(packet.as_slice(), value.socket_address) {
+                            // we will create another thread that will handle printing the runtime error during event handling to a separate section
+                            // of the terminal screen
+                            // we will use channels to do this
+                            // TODO(Aniket)
+                            _ = e;
+                        }
                     }
                 }
                 Events::BroadcastError { destination, error } => {

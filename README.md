@@ -1,145 +1,121 @@
 # netbeam ⚡
 
-A minimal terminal tool for sending files over a local network. No internet, no cloud, no setup.
+Netbeam is a work-in-progress terminal application for sharing files directly between devices on the same local network. The goal is an AirDrop-like workflow without an internet connection, cloud storage, or a graphical interface.
 
----
+> [!IMPORTANT]
+> Netbeam is not ready for file transfers yet. UDP device discovery is currently under development; the TCP transfer protocol and terminal interface are planned.
 
-## Installation
+## Current status
 
-Requires the [Rust toolchain](https://rustup.rs).
+Implemented:
+
+- Separate `send` and `receive` modes
+- IPv4 UDP broadcast discovery on port `11665`
+- Discovery request, receiver information, and acknowledgement packets
+- Retransmission of unacknowledged receiver information
+- OS-thread-based workers with channels for application events
+- Packet encoding, decoding, and malformed-packet tests
+
+Planned:
+
+- Display discovered devices and allow the user to select one
+- Transfer files over TCP on port `11666`
+- Stream files without loading them entirely into memory
+- Transfer progress and terminal UI
+- Graceful shutdown and complete worker error supervision
+- Broader Windows, macOS, and Linux testing
+
+## Building
+
+Netbeam requires the [Rust toolchain](https://rustup.rs).
 
 ```bash
-git clone https://github.com/ASujay/netbeam
+git clone https://github.com/ASujay/netbeam.git
 cd netbeam
+cargo build
+```
+
+The development binary will be written to `target/debug/netbeam`.
+
+To create an optimized build:
+
+```bash
 cargo build --release
 ```
 
-The binary will be at `target/release/netbeam`. Move it to your PATH:
+## Current usage
+
+Start receiver mode on one device:
 
 ```bash
-# Linux / macOS
-cp target/release/netbeam /usr/local/bin/
-
-# Windows (run as administrator)
-copy target\release\netbeam.exe C:\Windows\System32\
+cargo run -- receive
 ```
 
----
-
-## Usage
-
-On the receiving machine:
+Start sender discovery mode on another device connected to the same local network:
 
 ```bash
-netbeam receive
+cargo run -- send
 ```
 
-On the sending machine:
+At this stage, sender mode broadcasts discovery packets periodically and receiver mode responds to them. There is no file-path argument or file transfer yet.
+
+Depending on the operating system, you may need to allow Netbeam through the local firewall. VPNs, virtual network adapters, and networks that isolate clients can interfere with UDP broadcast discovery.
+
+## Discovery protocol
+
+Both modes bind an IPv4 UDP socket to `0.0.0.0:11665`.
+
+```text
+SENDER                                      RECEIVER
+  |                                             |
+  |----- CONN (UDP broadcast) ----------------->|
+  |                                             |
+  |<---- INFO { TCP port, request ID } ----------|
+  |                                             |
+  |----- ACKN { request ID } ------------------->|
+  |                                             |
+```
+
+The packets currently use a compact binary representation:
+
+| Packet | Layout |
+| --- | --- |
+| `CONN` | 4-byte `CONN` identifier |
+| `INFO` | 4-byte `INFO` identifier, little-endian `u16` TCP port, little-endian `u64` request ID, UTF-8 hostname bytes |
+| `ACKN` | 4-byte `ACKN` identifier, little-endian `u64` request ID |
+
+The receiver retains unacknowledged requests and retransmits `INFO` every five seconds until it receives the corresponding `ACKN`.
+
+## Current architecture
+
+Netbeam uses operating-system threads rather than an async runtime.
+
+- `app.rs` parses the mode, initializes the selected module, and owns application state.
+- `sender.rs` owns the sender discovery socket and starts broadcast and reply-listener workers.
+- `receiver.rs` owns the receiver discovery socket and starts reply and retransmission workers.
+- `protocol.rs` implements discovery network behavior.
+- `packet.rs` defines discovery packet encoding and decoding.
+- `event.rs` passes worker events back to application state.
+- `thread.rs` provides shared shutdown state and worker grouping.
+- `registry.rs` stores discovered devices and pending requests.
+
+## Development checks
 
 ```bash
-netbeam send <file_path>
+cargo fmt -- --check
+cargo check
+cargo test
 ```
 
-netbeam will scan the local network, display all available receivers by name and IP, and let you pick one. The file is then transferred directly over TCP.
+## Platform status
 
-```
-Scanning for receivers...
-
-  1. rahul-laptop        192.168.29.143
-  2. DESKTOP-XYZ123      192.168.29.2
-
-Select a receiver: 1
-
-Sending photo.jpg (3.2 MB)...
-[====================] 100% — done
-```
-
-On the receiver side:
-
-```
-netbeam running on: rahul-laptop
-Listening for incoming files...
-
-Receiving photo.jpg (3.2 MB)...
-[====================] 100% — saved to photo.jpg
-```
-
-The receiver keeps listening after each transfer until stopped with `Ctrl+C`. The sender exits once the transfer is complete. If a file with the same name already exists in the receiver's current directory, it is overwritten.
-
----
-
-## Architecture
-
-### Overview
-
-netbeam is a single binary that operates in one of two modes depending on the subcommand. Both modes use port `22690` — TCP for file transfer and UDP for discovery.
-
-```
-SENDER                                        RECEIVER
-──────                                        ────────
-netbeam send photo.jpg                        netbeam receive
-│                                             │
-│                                             ├── Thread 1: UDP listener (background)
-│                                             │     binds 0.0.0.0:22690
-│                                             │     responds to discovery packets forever
-│                                             │
-│                                             └── Thread 2: TCP listener (background)
-│                                                   binds 0.0.0.0:22690
-│                                                   accepts connections forever
-│                                                   spawns Thread 3 per transfer
-│
-├── UDP broadcast → 255.255.255.255:22690
-│   "NETBEAM_DISCOVER"
-│                                             Thread 1 replies:
-│◀── "NETBEAM_HERE:rahul-laptop" ────────────────────┤
-│
-├── display list, user picks receiver
-│
-├── TCP connect → 192.168.29.143:22690
-│                                             Thread 2 accepts, spawns Thread 3
-│                                             │
-├── send protocol header + file bytes         │
-│                                             Thread 3 reads header + writes to disk
-│                                             prints transfer complete
-│                                             exits
-│
-└── exits
-```
-
-### Discovery — UDP Broadcast
-
-When `netbeam send` is invoked, it enables `SO_BROADCAST` on a UDP socket and sends a `NETBEAM_DISCOVER` packet to `255.255.255.255:22690`. Every machine on the local network receives this packet. Machines running `netbeam receive` recognize it and reply with `NETBEAM_HERE:<hostname>`. The sender collects replies for 2 seconds, then displays the list.
-
-The receiver learns the sender's IP for free from the UDP packet metadata — no extra handshake needed.
-
-### Transfer — TCP with a framing protocol
-
-TCP is a raw byte stream with no concept of files. netbeam defines a small header that the sender transmits before the file bytes:
-
-```
-[ 2 bytes ]  length of filename (big-endian u16)
-[ N bytes ]  filename (UTF-8)
-[ 8 bytes ]  file size in bytes (big-endian u64)
-[ ...     ]  raw file bytes, streamed in chunks
-```
-
-The receiver reads the header first to learn the filename and exact byte count, then reads precisely that many bytes from the stream and writes them to disk in chunks. The file is never fully loaded into memory on either side.
-
-### Concurrency model
-
-netbeam uses OS threads — no async runtime. The receiver runs two long-lived threads from startup: one for UDP discovery replies, one for TCP connection acceptance. Each accepted TCP connection is handed off to a new short-lived thread that handles only that transfer and exits when done. The main thread blocks on stdin, keeping the process alive until `Ctrl+C`.
-
----
-
-## Platform support
+Cross-platform behavior is still being tested.
 
 | Platform | Status |
-|----------|--------|
-| Linux    | ✅ |
-| macOS    | ✅ |
-| Windows  | ✅ |
-
----
+| --- | --- |
+| Windows | UDP discovery under development |
+| macOS | UDP discovery under development |
+| Linux | Not yet verified |
 
 ## License
 

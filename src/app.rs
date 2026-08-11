@@ -1,5 +1,5 @@
 use crate::common::{RECEIVE_MODE_IDENTIFIER, RegistryId, Request, SEND_MODE_IDENTIFIER};
-use crate::device::Device;
+use crate::device::{Device, get_device_name};
 use crate::errors::{NBError, NBResult};
 use crate::event::{EventManager, Events};
 use crate::receiver::FileReceiver;
@@ -53,7 +53,7 @@ impl App {
         let shutdown = ShutdownSignal::new();
         let thread_context = ThreadContext::new(shutdown, event_sender);
 
-        // we propogate the error because if we cannot initalize this struct the app wont runt, so this is an irrecoverable failure
+        // Module initialization errors are fatal because the selected mode cannot run without it.
         let module = match mode {
             Mode::Send => AppModule::Sender(FileSender::new(thread_context.clone())?),
             Mode::Receive => AppModule::Receiver(FileReceiver::new(thread_context.clone())?),
@@ -94,11 +94,14 @@ pub struct AppState {
     pub is_running: bool,
     pub device_registry: Arc<Mutex<Registry<Device>>>,
     pub request_registry: Arc<Mutex<Registry<Request>>>,
+    pub hostname: String,
 }
 
 impl AppState {
     pub fn new() -> Self {
+        let hostname = get_device_name();
         AppState {
+            hostname,
             is_running: true,
             device_registry: Arc::new(Mutex::new(Registry::new())),
             request_registry: Arc::new(Mutex::new(Registry::new())),

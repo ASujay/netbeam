@@ -1,6 +1,6 @@
 use crate::{
     common::{DEFAULT_RETRANSMIT_PERIOD, DEFAULT_TCP_PORT, DEFAULT_UDP_PORT, Request},
-    device::Device,
+    device::{Device, get_device_name},
     errors::NBResult,
     event::Events,
     packet::DiscoveryPacket,
@@ -52,12 +52,15 @@ pub fn reply_to_info(context: ThreadContext, socket: UdpSocket) -> NBResult<()> 
     let mut buf = [0u8; 1024];
     while !context.is_shutdown() {
         let (bytes_read, socket_addr) = socket.recv_from(&mut buf)?;
-        if let Some(DiscoveryPacket::Info { port, request_id }) =
-            DiscoveryPacket::decode(&buf[0..bytes_read])
+        if let Some(DiscoveryPacket::Info {
+            port,
+            request_id,
+            hostname,
+        }) = DiscoveryPacket::decode(&buf[0..bytes_read])
         {
             context.register_event(Events::DeviceFound {
                 request_id,
-                device: Device::new(String::from("Temp"), socket_addr.ip(), port),
+                device: Device::new(hostname, socket_addr.ip(), port),
             })?;
             // send the acknowledgement to the receiver
             let ackn_packet = DiscoveryPacket::Ackn { request_id }.encode();
@@ -71,13 +74,19 @@ pub fn reply_to_sender(context: ThreadContext, socket: UdpSocket) -> NBResult<()
         let mut buf = [0u8; 1024];
         let (bytes_read, socket_address) = socket.recv_from(&mut buf)?;
         let packet = DiscoveryPacket::decode(&buf[0..bytes_read]);
+        let hostname = get_device_name();
         if let Some(packet) = packet {
             match packet {
                 DiscoveryPacket::Conn => {
                     let request_id: u64 = rand::random();
                     let port = DEFAULT_TCP_PORT;
                     // we need to send the reply to the sender
-                    let packet = DiscoveryPacket::Info { port, request_id }.encode();
+                    let packet = DiscoveryPacket::Info {
+                        hostname,
+                        port,
+                        request_id,
+                    }
+                    .encode();
                     let request = Request::new(request_id, port, socket_address);
                     if let Err(e) = socket.send_to(packet.as_slice(), socket_address) {
                         eprintln!("Error replying to broadcaster' {}", e);
