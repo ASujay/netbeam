@@ -1,4 +1,4 @@
-use crate::common::{DEFAULT_UDP_IP, DEFAULT_UDP_PORT};
+use crate::common::{DEFAULT_UDP_IP, DEFAULT_UDP_PORT, SOCKET_READ_TIMEOUT, SOCKET_WRITE_TIMEOUT};
 use crate::{
     errors::NBResult,
     protocol,
@@ -15,6 +15,8 @@ impl FileReceiver {
     pub fn new(context: ThreadContext) -> NBResult<Self> {
         let discovery_socket_address = format!("{}:{}", DEFAULT_UDP_IP, DEFAULT_UDP_PORT);
         let socket = UdpSocket::bind(discovery_socket_address)?;
+        socket.set_read_timeout(Some(SOCKET_READ_TIMEOUT))?;
+        socket.set_write_timeout(Some(SOCKET_WRITE_TIMEOUT))?;
         Ok(FileReceiver { context, socket })
     }
 

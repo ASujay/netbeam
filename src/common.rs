@@ -1,4 +1,4 @@
-use std::net::SocketAddr;
+use std::{net::SocketAddr, time::Duration};
 
 pub type RegistryId = u64;
 
@@ -9,6 +9,8 @@ pub const DEFAULT_UDP_IP: &str = "0.0.0.0";
 pub const DEFAULT_RETRANSMIT_PERIOD: u64 = 5;
 pub const SEND_MODE_IDENTIFIER: &'static str = "send";
 pub const RECEIVE_MODE_IDENTIFIER: &'static str = "receive";
+pub const SOCKET_READ_TIMEOUT: Duration = Duration::from_millis(250);
+pub const SOCKET_WRITE_TIMEOUT: Duration = Duration::from_millis(500);
 
 pub struct Request {
     pub request_id: RegistryId,

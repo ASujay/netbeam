@@ -8,6 +8,7 @@ use crate::{
 };
 use network_interface::{NetworkInterface, NetworkInterfaceConfig};
 use std::{
+    io::ErrorKind,
     net::{IpAddr, SocketAddr, UdpSocket},
     thread::{self},
     time::Duration,
@@ -27,12 +28,16 @@ fn get_broadcast_addrs() -> NBResult<Vec<IpAddr>> {
     }
     Ok(broadcast_addrs)
 }
+
+fn is_socket_timeout(kind: ErrorKind) -> bool {
+    matches!(kind, ErrorKind::TimedOut | ErrorKind::WouldBlock)
+}
+
 pub fn broadcast(context: ThreadContext, socket: UdpSocket) -> NBResult<()> {
     // we can let the thread crash here since if we cannot get the network interfaces we cannot continue
     let packet = DiscoveryPacket::Conn.encode();
     let broadcast_addrs: Vec<IpAddr> = get_broadcast_addrs()?;
     while !context.is_shutdown() {
-        println!("Broadcasting on {} interfaces", broadcast_addrs.len());
         for ip in &broadcast_addrs {
             let destination = SocketAddr::new(*ip, DEFAULT_UDP_PORT);
 
@@ -51,63 +56,84 @@ pub fn broadcast(context: ThreadContext, socket: UdpSocket) -> NBResult<()> {
 pub fn reply_to_info(context: ThreadContext, socket: UdpSocket) -> NBResult<()> {
     let mut buf = [0u8; 1024];
     while !context.is_shutdown() {
-        let (bytes_read, socket_addr) = socket.recv_from(&mut buf)?;
-        if let Some(DiscoveryPacket::Info {
+        let (bytes_read, socket_addr) = match socket.recv_from(&mut buf) {
+            Ok(data) => data,
+            Err(error) if is_socket_timeout(error.kind()) => continue,
+            Err(error) => return Err(error.into()),
+        };
+
+        let Some(DiscoveryPacket::Info {
+            hostname,
             port,
             request_id,
-            hostname,
         }) = DiscoveryPacket::decode(&buf[0..bytes_read])
-        {
-            context.register_event(Events::DeviceFound {
-                request_id,
-                device: Device::new(hostname, socket_addr.ip(), port),
-            })?;
-            // send the acknowledgement to the receiver
-            let ackn_packet = DiscoveryPacket::Ackn { request_id }.encode();
-            _ = socket.send_to(ackn_packet.as_slice(), socket_addr)?;
-        }
+        else {
+            continue;
+        };
+        context.register_event(Events::DeviceFound {
+            request_id,
+            device: Device::new(hostname, socket_addr.ip(), port),
+        })?;
+        let ackn_packet = DiscoveryPacket::Ackn { request_id }.encode();
+        // send the acknowledgement to the receiver
+        match socket.send_to(ackn_packet.as_slice(), socket_addr) {
+            Ok(_) => {}
+            Err(error) if is_socket_timeout(error.kind()) => continue,
+            Err(error) => return Err(error.into()),
+        };
     }
     Ok(())
 }
+
 pub fn reply_to_sender(context: ThreadContext, socket: UdpSocket) -> NBResult<()> {
     while !context.is_shutdown() {
         let mut buf = [0u8; 1024];
-        let (bytes_read, socket_address) = socket.recv_from(&mut buf)?;
-        let packet = DiscoveryPacket::decode(&buf[0..bytes_read]);
-        let hostname = get_device_name();
-        if let Some(packet) = packet {
-            match packet {
-                DiscoveryPacket::Conn => {
-                    let request_id: u64 = rand::random();
-                    let port = DEFAULT_TCP_PORT;
-                    // we need to send the reply to the sender
-                    let packet = DiscoveryPacket::Info {
-                        hostname,
-                        port,
-                        request_id,
-                    }
-                    .encode();
-                    let request = Request::new(request_id, port, socket_address);
-                    if let Err(e) = socket.send_to(packet.as_slice(), socket_address) {
-                        eprintln!("Error replying to broadcaster' {}", e);
-                    } else {
-                        // save the request to the registry
+        let (bytes_read, socket_address) = match socket.recv_from(&mut buf) {
+            Ok(data) => data,
+            Err(error) if is_socket_timeout(error.kind()) => {
+                continue;
+            }
+            Err(error) => return Err(error.into()),
+        };
+        let Some(packet) = DiscoveryPacket::decode(&buf[0..bytes_read]) else {
+            continue;
+        };
+        match packet {
+            DiscoveryPacket::Conn => {
+                let hostname = get_device_name();
+                let request_id: u64 = rand::random();
+                let port = DEFAULT_TCP_PORT;
+                // we need to send the reply to the sender
+                let packet = DiscoveryPacket::Info {
+                    hostname,
+                    port,
+                    request_id,
+                }
+                .encode();
+                let request = Request::new(request_id, port, socket_address);
+                match socket.send_to(packet.as_slice(), socket_address) {
+                    Ok(_) => {
                         context.register_event(Events::AddRequest {
                             request_id,
                             request,
                         })?;
                     }
-                }
-                DiscoveryPacket::Ackn { request_id } => {
-                    // remove the request to the registry
-                    context.register_event(Events::RemoveRequest(request_id))?;
-                }
-                _ => {}
+                    Err(error) if is_socket_timeout(error.kind()) => {
+                        continue;
+                    }
+                    Err(error) => return Err(error.into()),
+                };
             }
+            DiscoveryPacket::Ackn { request_id } => {
+                // remove the request to the registry
+                context.register_event(Events::RemoveRequest(request_id))?;
+            }
+            _ => {}
         }
     }
     Ok(())
 }
+
 pub fn retransmit_to_sender(context: ThreadContext, socket: UdpSocket) -> NBResult<()> {
     // we need to continue sending the request packets for all pending requests
     while !context.is_shutdown() {
