@@ -1,5 +1,8 @@
 use crate::event::Events;
-use std::{io, sync::mpsc::SendError};
+use std::{
+    eprintln, io,
+    sync::mpsc::{RecvError, SendError},
+};
 
 pub type NBResult<T> = Result<T, NBError>;
 
@@ -9,6 +12,7 @@ pub enum NBError {
     Io(std::io::Error),
     NetworkInterface(network_interface::Error),
     EventRegister(SendError<Events>),
+    EventChannelDisconnection(RecvError),
 }
 
 impl NBError {
@@ -25,6 +29,9 @@ impl NBError {
             }
             NBError::EventRegister(err) => {
                 eprintln!("Unable to register event: {}", err);
+            }
+            NBError::EventChannelDisconnection(err) => {
+                eprintln!("Event channel was disconnected: {}", err);
             }
         }
     }
@@ -45,5 +52,11 @@ impl From<network_interface::Error> for NBError {
 impl From<SendError<Events>> for NBError {
     fn from(err: SendError<Events>) -> Self {
         NBError::EventRegister(err)
+    }
+}
+
+impl From<RecvError> for NBError {
+    fn from(value: RecvError) -> Self {
+        NBError::EventChannelDisconnection(value)
     }
 }

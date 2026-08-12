@@ -2,6 +2,7 @@ use crate::{
     app::AppState,
     common::{RegistryId, Request},
     device::Device,
+    errors::NBResult,
     packet::DiscoveryPacket,
 };
 use crossterm::event::Event;
@@ -30,6 +31,7 @@ pub enum Events {
     },
     RemoveRequest(RegistryId),
     RetransmitPendingPackets(UdpSocket),
+    Quit,
 }
 
 pub struct EventManager {
@@ -48,8 +50,9 @@ impl EventManager {
         _ = key_event;
     }
 
-    pub fn process_events(&self, state: &mut AppState) {
-        while let Ok(event) = self.receiver.recv() {
+    pub fn process_events(&self, state: &mut AppState) -> NBResult<()> {
+        loop {
+            let event = self.receiver.recv()?;
             match event {
                 Events::Key(key_event) => self.process_key_events(state, key_event),
                 Events::DeviceFound { request_id, device } => state.add_device(request_id, device),
@@ -80,7 +83,11 @@ impl EventManager {
                 Events::BroadcastError { destination, error } => {
                     eprintln!("Broadcast to {destination} failed: {error}");
                 }
+                Events::Quit => {
+                    break;
+                }
             }
         }
+        Ok(())
     }
 }

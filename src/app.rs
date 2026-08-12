@@ -77,21 +77,21 @@ impl App {
 
     fn run(&mut self) -> NBResult<()> {
         let app_thread_group = self.start_module()?;
-        while self.state.is_running {
-            self.process_events();
-        }
+        let event_result = self.process_events();
         self.thread_context.shutdown();
-        _ = app_thread_group.join_all();
+        let join_result = app_thread_group.join_all();
+        event_result?;
+        join_result?;
         Ok(())
     }
 
-    fn process_events(&mut self) {
-        self.event_manager.process_events(&mut self.state);
+    fn process_events(&mut self) -> NBResult<()> {
+        self.event_manager.process_events(&mut self.state)?;
+        Ok(())
     }
 }
 
 pub struct AppState {
-    pub is_running: bool,
     pub device_registry: Arc<Mutex<Registry<Device>>>,
     pub request_registry: Arc<Mutex<Registry<Request>>>,
     pub hostname: String,
@@ -102,7 +102,6 @@ impl AppState {
         let hostname = get_device_name();
         AppState {
             hostname,
-            is_running: true,
             device_registry: Arc::new(Mutex::new(Registry::new())),
             request_registry: Arc::new(Mutex::new(Registry::new())),
         }
@@ -126,9 +125,5 @@ impl AppState {
     pub fn remove_request(&mut self, request_id: RegistryId) {
         let mut reg = self.request_registry.lock().unwrap();
         reg.remove_entity(request_id);
-    }
-
-    pub fn shutdown_app(&mut self) {
-        self.is_running = false;
     }
 }
